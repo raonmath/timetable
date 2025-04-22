@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-# ======== 비밀번호 및 사용자 정보 ========
+# ======== 사용자 정보 ========
 PASSWORDS = {
     "rt5222": {"name": "이윤로원장님", "role": "원장"},
     "rt1866": {"name": "이라온실장님", "role": "실장"},
@@ -15,7 +15,7 @@ PASSWORDS = {
     "rt3080": {"name": "이예원조교", "role": "조교"},
 }
 
-# ======== 세션 초기화 ========
+# ======== 세션 상태 초기화 ========
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.username = None
@@ -36,11 +36,10 @@ if not st.session_state.authenticated:
             st.session_state.role = user["role"]
             st.session_state.menu = "home"
             st.success(f"✅ 로그인 성공! {user['name']} ({user['role']})")
-            st.experimental_rerun()
         else:
             st.error("❌ 비밀번호가 틀렸습니다.")
 
-# ======== 메인 화면 (권한별 버튼 제공) ========
+# ======== 메인 화면 ========
 elif st.session_state.menu == "home":
     st.markdown(f"## 👋 {st.session_state.username} 안녕하세요.")
     role = st.session_state.role
@@ -117,7 +116,7 @@ elif st.session_state.menu == "시험 정보 입력":
         st.write("📄 저장된 정보:")
         st.json(st.session_state.class_info[selected_class])
 
-# ======== 학생 정보 등록 ========
+# ======== 시간표 출력 = 학생 입력 ========
 elif st.session_state.menu == "시간표 출력":
     st.subheader("🧑‍🎓 학생 정보 등록")
 

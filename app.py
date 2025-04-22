@@ -31,7 +31,6 @@ if not st.session_state.authenticated:
             st.session_state.username = user_info["name"]
             st.session_state.role = user_info["role"]
             st.success(f"✅ 로그인 성공! {st.session_state.username} ({st.session_state.role})")
-            st.experimental_rerun()
         else:
             st.error("❌ 비밀번호가 틀렸습니다.")
 
@@ -131,3 +130,67 @@ else:
             st.subheader("📋 등록된 학생 명단")
             for student in st.session_state.students:
                 st.write(student)
+
+        else:
+            st.error("❌ 비밀번호가 틀렸습니다.")
+
+# ======== 메인 화면 UI (인삿말 + 버튼) ========
+elif not st.session_state.menu:
+    st.markdown(f"## 👋 {st.session_state.username} 선생님 안녕하세요.")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("📋 시험 정보 입력", use_container_width=True):
+            st.session_state.menu = "시험 정보 입력"
+
+    with col2:
+        st.markdown("""
+        <style>
+        div.stButton > button:nth-child(1) {
+            background-color: #ff4b4b;
+            color: white;
+            height: 3em;
+            font-size: 18px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("🧠 시간표 출력", use_container_width=True):
+            st.session_state.menu = "시간표 출력"
+
+# ======== 시험 정보 입력 ========
+elif st.session_state.menu == "시험 정보 입력":
+    st.subheader("📋 시험 정보 입력")
+    teacher_classes = {
+        "김서진선생님": ["초6-A반", "중1-B반"],
+        "류승연선생님": ["중1-A반"],
+        "조하현선생님": ["중2-C반"],
+        "이윤로원장님": ["전체 관리"],
+        "이라온실장님": ["전체 관리"]
+    }
+    teacher_name = st.session_state.username
+    classes = teacher_classes.get(teacher_name, ["담당 반 없음"])
+    selected_class = st.selectbox("담당 반 선택", classes)
+
+    school_name = st.text_input("🏫 학교명")
+    exam_start = st.date_input("🗓️ 시험 시작일")
+    exam_end = st.date_input("🗓️ 시험 종료일")
+    math_exam_date = st.date_input("📘 수학 시험일")
+
+    if st.button("시험 정보 저장"):
+        if "class_info" not in st.session_state:
+            st.session_state.class_info = {}
+        st.session_state.class_info[selected_class] = {
+            "학교명": school_name,
+            "시험기간": f"{exam_start} ~ {exam_end}",
+            "수학시험": math_exam_date
+        }
+        st.success(f"{selected_class}의 시험 정보를 저장했습니다.")
+
+    if "class_info" in st.session_state and selected_class in st.session_state.class_info:
+        st.write("📄 저장된 정보:")
+        st.json(st.session_state.class_info[selected_class])
+
+# ======== 시간표 출력 (임시 안내) ========
+elif st.session_state.menu == "시간표 출력":
+    st.subheader("🧠 시간표 출력 기능")
+    st.info("자동 시간표 출력 기능이 여기에 구현될 예정입니다.")

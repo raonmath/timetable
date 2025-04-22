@@ -4,7 +4,6 @@ import pandas as pd
 from datetime import date
 from collections import defaultdict
 
-# ===== 사용자 설정 =====
 PASSWORDS = {
     "rt5222": {"name": "이윤로원장님", "role": "원장"},
     "rt1866": {"name": "이라온실장님", "role": "실장"},
@@ -29,24 +28,25 @@ students = [
     {"이름": "한민관", "학교": "배봉초", "반": "고2B반"},
 ]
 
-# ===== 초기화 =====
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+    st.session_state.page = "login"
     st.session_state.username = ""
     st.session_state.role = ""
-    st.session_state.page = "login"
     st.session_state.exam_subjects = ["시험기간", "수학"]
     st.session_state.exam_data = defaultdict(lambda: defaultdict(dict))
 
-# ===== 페이지 제어 =====
 def go(page):
     st.session_state.page = page
     st.experimental_rerun()
 
-# ===== 로그인 =====
+def get_korean_day(d):
+    days = ["월", "화", "수", "목", "금", "토", "일"]
+    return days[d.weekday()]
+
 if st.session_state.page == "login":
     st.title("🔐 로그인")
-    pw = st.text_input("비밀번호를 입력하세요", type="password", key="pw")
+    pw = st.text_input("비밀번호를 입력하세요", type="password")
     if st.button("확인"):
         user = PASSWORDS.get(pw)
         if user:
@@ -57,7 +57,6 @@ if st.session_state.page == "login":
         else:
             st.error("비밀번호가 올바르지 않습니다.")
 
-# ===== 홈 =====
 elif st.session_state.page == "home":
     st.markdown(f"## 👋 {st.session_state.username} 안녕하세요. ({st.session_state.role})")
     col1, col2 = st.columns(2)
@@ -66,11 +65,10 @@ elif st.session_state.page == "home":
     if col2.button("🧠 시험지출력"):
         st.info("시험지출력은 다음 단계에서 제공됩니다.")
 
-# ===== 시험정보입력 =====
 elif st.session_state.page == "exam_input":
     st.title("📋 시험정보 입력")
 
-    new_subject = st.text_input("➕ 시험과목 추가 (예: 국어, 영어)", key="new_subject")
+    new_subject = st.text_input("➕ 시험과목 추가 (예: 국어, 영어)")
     if st.button("과목추가"):
         s = new_subject.strip()
         if s and s not in st.session_state.exam_subjects:
@@ -83,30 +81,38 @@ elif st.session_state.page == "exam_input":
         if s["반"] in my_classes:
             school_map[s["학교"]][s["반"]].append(s["이름"])
 
+    rows = []
     for school, class_map in sorted(school_map.items()):
-        st.markdown(f"### 🏫 {school}")
-        table = {"시험항목": []}
-        for cls in class_map:
-            table[cls] = []
+        row = {"학교명": school}
+        for cls in my_classes:
+            names = class_map.get(cls, [])
+            row[cls] = ", ".join(names) + f" ({len(names)}명)" if names else ""
+
         for subject in st.session_state.exam_subjects:
-            table["시험항목"].append(subject)
-            for cls in class_map:
-                names = class_map[cls]
+            for cls in my_classes:
                 key = f"{school}_{cls}_{subject}"
                 if subject == "시험기간":
-                    col1, col2 = st.columns(2)
-                    start = col1.date_input(f"{cls} 시작일", key=key+"_start", value=date.today())
-                    end = col2.date_input(f"{cls} 종료일", key=key+"_end", value=date.today())
+                    start = st.date_input(f"{school} {cls} 시작일", key=key+"_start", value=date.today())
+                    end = st.date_input(f"{school} {cls} 종료일", key=key+"_end", value=date.today())
                     st.session_state.exam_data[school][cls][subject] = (start, end)
-                    cell = f"{start.strftime('%Y-%m-%d (%a)')} ~ {end.strftime('%Y-%m-%d (%a)')}"
                 else:
-                    d = st.date_input(f"{cls} {subject} 시험일", key=key, value=date.today())
+                    d = st.date_input(f"{school} {cls} {subject} 시험일", key=key, value=date.today())
                     st.session_state.exam_data[school][cls][subject] = d
-                    cell = d.strftime("%Y-%m-%d (%a)")
-                table[cls].append(cell)
 
-        df = pd.DataFrame(table)
-        st.dataframe(df, use_container_width=True)
+            if subject == "시험기간":
+                period = st.session_state.exam_data[school][my_classes[0]].get("시험기간", None)
+                if period:
+                    start, end = period
+                    row["시험기간"] = f"{start.strftime('%m-%d')}({get_korean_day(start)}) ~ {end.strftime('%m-%d')}({get_korean_day(end)})"
+            else:
+                exam_day = st.session_state.exam_data[school][my_classes[0]].get(subject, None)
+                if isinstance(exam_day, date):
+                    row[f"{subject}시험일"] = f"{exam_day.strftime('%m-%d')}({get_korean_day(exam_day)})"
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True)
 
     if st.button("← 돌아가기"):
         go("home")

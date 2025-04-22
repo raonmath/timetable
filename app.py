@@ -41,8 +41,12 @@ students = [
 
 my_classes = ["중3A반", "고2B반"]
 
-# ===== 로그인 화면 =====
-if not st.session_state.authenticated:
+# ===== 요일 포함 날짜 포맷 =====
+def format_date(d):
+    return d.strftime("%Y-%m-%d (%a)")
+
+# ===== 페이지: 로그인 =====
+if st.session_state.page == "login":
     st.title("🔐 로그인")
     with st.form("login_form", clear_on_submit=True):
         password = st.text_input("비밀번호를 입력하세요", type="password")
@@ -55,10 +59,10 @@ if not st.session_state.authenticated:
                 st.session_state.role = user["role"]
                 st.session_state.page = "home"
             else:
-                st.error("비밀번호가 틀렸습니다.")
+                st.error("❌ 비밀번호가 틀렸습니다.")
 
-# ===== 메인 화면 =====
-elif st.session_state.page == "home":
+# ===== 페이지: 홈 =====
+if st.session_state.page == "home" and st.session_state.authenticated:
     st.markdown(f"## 👋 {st.session_state.username} 안녕하세요. ({st.session_state.role})")
     st.markdown("#### 원하는 메뉴를 선택하세요.")
     col1, col2 = st.columns(2)
@@ -69,14 +73,11 @@ elif st.session_state.page == "home":
         if st.button("🧠 시험지출력"):
             st.session_state.page = "시험지출력"
 
-# ===== 요일 포함 날짜 포맷 =====
-def format_date(d):
-    return d.strftime("%Y-%m-%d (%a)")
-
-# ===== 시험정보입력 화면 =====
-elif st.session_state.page == "시험정보입력":
+# ===== 페이지: 시험정보입력 =====
+if st.session_state.page == "시험정보입력":
     st.title("📋 시험정보 입력")
 
+    # 과목 선택
     available_subjects = ["국어", "영어", "사회", "과학"]
     new_subjects = st.multiselect("시험일 추가 과목 선택", available_subjects)
 
@@ -84,7 +85,7 @@ elif st.session_state.page == "시험정보입력":
         if sub not in st.session_state.custom_subjects:
             st.session_state.custom_subjects.append(sub)
 
-    # 그룹핑
+    # 데이터 그룹핑
     school_data = defaultdict(lambda: defaultdict(list))
     for stu in students:
         if stu["반"] in my_classes:
@@ -100,7 +101,6 @@ elif st.session_state.page == "시험정보입력":
             row = {"시험항목": subject}
             for cls in columns:
                 names = class_map[cls]
-                student_text = f"<span class='small-text'>{', '.join(names)} ({len(names)}명)</span>"
                 key = f"{school}_{cls}_{subject}"
                 if subject == "시험기간":
                     col1, col2 = st.columns(2)
@@ -124,9 +124,9 @@ elif st.session_state.page == "시험정보입력":
         st.success("시험정보가 저장되었습니다.")
         st.json(st.session_state.exam_schedule)
 
-# ===== 시험지출력 화면 (단순 안내용) =====
-elif st.session_state.page == "시험지출력":
+# ===== 페이지: 시험지출력 =====
+if st.session_state.page == "시험지출력":
     st.title("🧠 시험지출력")
-    st.info("이 화면은 다음 단계에서 구현됩니다. 각 반별 학생 목록 및 출력 필터가 포함될 예정입니다.")
+    st.info("다음 단계에서 구현 예정입니다. 반별 학생목록과 출력기능 포함 예정입니다.")
     if st.button("← 돌아가기"):
         st.session_state.page = "home"

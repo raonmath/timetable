@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-# ======== 사용자 정보 ========
+# 사용자 인증 정보
 PASSWORDS = {
     "rt5222": {"name": "이윤로원장님", "role": "원장"},
     "rt1866": {"name": "이라온실장님", "role": "실장"},
@@ -15,7 +15,6 @@ PASSWORDS = {
     "rt3080": {"name": "이예원조교", "role": "조교"},
 }
 
-# ======== 세션 상태 초기화 ========
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.username = None
@@ -24,67 +23,54 @@ if "authenticated" not in st.session_state:
     st.session_state.students = []
     st.session_state.class_info = {}
 
-# ======== 로그인 ========
+# ===== CSS =====
+st.markdown("""
+<style>
+button {
+    height: 3em;
+    font-size: 16px !important;
+    border-radius: 0.5em;
+}
+div.stButton > button {
+    width: 100%;
+    margin: 5px 0;
+}
+.blue {background-color: #4a90e2; color: white;}
+.red {background-color: #e74c3c; color: white;}
+.green {background-color: #2ecc71; color: white;}
+</style>
+""", unsafe_allow_html=True)
+
+# ===== 로그인 =====
 if not st.session_state.authenticated:
     st.title("🔐 로그인")
-    password = st.text_input("비밀번호를 입력하세요", type="password")
-    if st.button("확인"):
-        user = PASSWORDS.get(password)
-        if user:
-            st.session_state.authenticated = True
-            st.session_state.username = user["name"]
-            st.session_state.role = user["role"]
-            st.session_state.menu = "home"
-            st.success(f"✅ 로그인 성공! {user['name']} ({user['role']})")
-        else:
-            st.error("❌ 비밀번호가 틀렸습니다.")
+    with st.form("login_form", clear_on_submit=True):
+        password = st.text_input("비밀번호를 입력하세요", type="password")
+        submitted = st.form_submit_button("확인")
+        if submitted:
+            user = PASSWORDS.get(password)
+            if user:
+                st.session_state.authenticated = True
+                st.session_state.username = user["name"]
+                st.session_state.role = user["role"]
+                st.session_state.menu = "home"
+            else:
+                st.error("❌ 비밀번호가 틀렸습니다.")
 
-# ======== 메인 화면 ========
+# ===== 메인 화면 =====
 elif st.session_state.menu == "home":
     st.markdown(f"## 👋 {st.session_state.username} 안녕하세요.")
     role = st.session_state.role
-    col1, col2, col3 = st.columns(3)
 
     if role in ["원장", "실장"]:
-        with col1:
-            if st.button("📊 현황 보고", use_container_width=True):
-                st.session_state.menu = "현황 보고"
-        with col2:
-            if st.button("📋 정보 입력", use_container_width=True):
-                st.session_state.menu = "시험 정보 입력"
-        with col3:
-            st.markdown("""
-            <style>
-            div.stButton > button:nth-child(1) {
-                background-color: #ff4b4b;
-                color: white;
-                height: 3em;
-                font-size: 18px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            if st.button("🧠 시간표 출력", use_container_width=True):
-                st.session_state.menu = "시간표 출력"
+        if st.button("📊 현황 보고", key="status", help="전체 현황 확인"):
+            st.session_state.menu = "현황 보고"
+    if st.button("📋 시험 정보 입력", key="exam", help="시험일정 입력"):
+        st.session_state.menu = "시험 정보 입력"
+    if st.button("🧠 시간표 출력", key="timetable", help="학생 등록 및 시간표 확인"):
+        st.session_state.menu = "시간표 출력"
 
-    elif role in ["강사", "조교"]:
-        with col1:
-            if st.button("📋 정보 입력", use_container_width=True):
-                st.session_state.menu = "시험 정보 입력"
-        with col2:
-            st.markdown("""
-            <style>
-            div.stButton > button:nth-child(1) {
-                background-color: #ff4b4b;
-                color: white;
-                height: 3em;
-                font-size: 18px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            if st.button("🧠 시간표 출력", use_container_width=True):
-                st.session_state.menu = "시간표 출력"
-
-# ======== 시험 정보 입력 ========
+# ===== 시험 정보 입력 =====
 elif st.session_state.menu == "시험 정보 입력":
     st.subheader("📋 시험 정보 입력")
 
@@ -116,7 +102,7 @@ elif st.session_state.menu == "시험 정보 입력":
         st.write("📄 저장된 정보:")
         st.json(st.session_state.class_info[selected_class])
 
-# ======== 시간표 출력 = 학생 입력 ========
+# ===== 학생 정보 입력 (시간표 출력 메뉴에 포함) =====
 elif st.session_state.menu == "시간표 출력":
     st.subheader("🧑‍🎓 학생 정보 등록")
 
@@ -170,7 +156,7 @@ elif st.session_state.menu == "시간표 출력":
         st.subheader("📋 등록된 학생 명단")
         st.table(st.session_state.students)
 
-# ======== 현황 보고 ========
+# ===== 현황 보고 =====
 elif st.session_state.menu == "현황 보고":
     st.subheader("📊 전체 현황")
     st.write("시험 정보:", st.session_state.class_info)

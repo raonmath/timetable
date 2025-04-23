@@ -13,31 +13,34 @@ PASSWORDS = {
     "rt3080": {"name": "이예원", "role": "조교"},
 }
 
-# 초기 세션값
+# 초기 세션 설정
 if "page" not in st.session_state:
     st.session_state.page = "login"
     st.session_state.user = ""
     st.session_state.role = ""
+    st.session_state.login_error = False
 
-# 페이지 전환 함수
-def go(page):
-    st.session_state.page = page
-    st.experimental_rerun()
+# 로그인 함수 (rerun 없이 처리)
+def login():
+    pw = st.session_state.password_input
+    user = PASSWORDS.get(pw)
+    if user:
+        st.session_state.user = user["name"]
+        st.session_state.role = user["role"]
+        st.session_state.page = "main"
+        st.session_state.login_error = False
+    else:
+        st.session_state.login_error = True
 
 # 1. 로그인 화면
 if st.session_state.page == "login":
     st.title("🔐 라온 시간표 시스템")
-    pw = st.text_input("비밀번호를 입력하세요", type="password")
-    if st.button("확인") or st.session_state.get("pw_entered", False):
-        user = PASSWORDS.get(pw)
-        if user:
-            st.session_state.user = user["name"]
-            st.session_state.role = user["role"]
-            go("main")
-        else:
-            st.error("비밀번호가 올바르지 않습니다.")
+    st.text_input("비밀번호를 입력하세요", type="password", key="password_input")
+    st.button("확인", on_click=login)
+    if st.session_state.login_error:
+        st.error("비밀번호가 올바르지 않습니다.")
 
-# 2. 메인 화면 (권한별 메뉴 구성)
+# 2. 메인 화면 (권한별 메뉴)
 elif st.session_state.page == "main":
     st.markdown(f"## 👋 {st.session_state.user}님 환영합니다. ({st.session_state.role})")
     st.write("")

@@ -8,7 +8,7 @@ from datetime import date
 DATA_PATH = "students.json"
 EXAM_PATH = "exam_dates.json"
 
-# 사용자 비밀번호 목록
+# 비밀번호 목록
 PASSWORDS = {
     "rt5222": {"name": "이윤로", "role": "원장"},
     "rt1866": {"name": "이라온", "role": "실장"},
@@ -174,6 +174,18 @@ elif st.session_state.page == "student_input":
                 "학습과정": "중2-1, 중2-2"
             }]).to_excel(buffer, index=False, engine="openpyxl")
             st.download_button("양식 다운로드", buffer.getvalue(), "원생입력양식.xlsx")
+
+    # 추가: 원생정보확인 + 삭제
+    if st.button("📋 원생정보확인"):
+        df = pd.DataFrame(st.session_state.students)
+        if df.empty:
+            st.info("저장된 학생 정보가 없습니다.")
+        else:
+            st.dataframe(df, use_container_width=True)
+            if st.button("🗑 전체 삭제"):
+                st.session_state.students.clear()
+                save_students([])
+                st.warning("모든 원생정보가 삭제되었습니다.")
 
     if st.button("⬅️ 이전단계로"):
         st.session_state.page = "main"

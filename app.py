@@ -14,6 +14,7 @@ PASSWORDS = {
     "rt3080": {"name": "이예원", "role": "조교"},
 }
 
+# 공통 목록
 초등학교 = sorted(["배봉초", "전농초", "전동초", "휘봉초", "삼육초", "청량초"])
 중학교 = sorted(["휘경여중", "전동중", "전일중", "전농중", "동대문중", "장평중", "경희중", "경희여중"])
 고등학교 = sorted(["휘경여고", "해성여고", "동대부고", "휘봉고", "경희고", "경희여고", "대광고", "한대부고", "혜원여고", "중화고", "석관고"])
@@ -30,13 +31,15 @@ PASSWORDS = {
 과목_중 = sorted(["중1-1", "중1-2", "중2-1", "중2-2", "중3-1", "중3-2"])
 과목_고 = sorted(["공통수학1", "공통수학2", "대수", "미적분1", "미적분2", "확률과 통계", "기하", "수학1", "수학2", "미적분"])
 
-# 세션 초기화
+# 초기 세션
 if "page" not in st.session_state:
     st.session_state.page = "login"
     st.session_state.user = ""
     st.session_state.role = ""
     st.session_state.login_error = False
     st.session_state.students = []
+    st.session_state.exam_data = {}
+    st.session_state.exam_subjects = ["수학"]
 
 def login():
     pw = st.session_state.password_input
@@ -49,7 +52,7 @@ def login():
     else:
         st.session_state.login_error = True
 
-# 로그인
+# 로그인 화면
 if st.session_state.page == "login":
     st.title("🔐 라온 시간표 시스템")
     st.text_input("비밀번호를 입력하세요", type="password", key="password_input")
@@ -57,34 +60,41 @@ if st.session_state.page == "login":
     if st.session_state.login_error:
         st.error("비밀번호가 올바르지 않습니다.")
 
-# 메인
+# 메인 화면
 elif st.session_state.page == "main":
-    st.markdown(f"## 👋 {st.session_state.user}님 환영합니다. ({st.session_state.role})")
+    st.markdown(f"## 👋 {st.session_state.user}님 환영합니다.")
     role = st.session_state.role
     if role in ["원장", "실장"]:
         cols = st.columns(4)
         if cols[0].button("📊 현황보고"): pass
         if cols[1].button("👤 원생입력"):
             st.session_state.page = "student_input"
-        if cols[2].button("📝 시험입력"): pass
+            st.experimental_rerun()
+        if cols[2].button("📝 시험입력"):
+            st.session_state.page = "exam_input"
+            st.experimental_rerun()
         if cols[3].button("📅 시간표출력"): pass
     elif role == "조교":
         cols = st.columns(3)
         if cols[0].button("👤 원생입력"):
             st.session_state.page = "student_input"
-        if cols[1].button("📝 시험입력"): pass
+            st.experimental_rerun()
+        if cols[1].button("📝 시험입력"):
+            st.session_state.page = "exam_input"
+            st.experimental_rerun()
         if cols[2].button("📅 시간표출력"): pass
     elif role == "강사":
         cols = st.columns(2)
-        if cols[0].button("📝 시험입력"): pass
+        if cols[0].button("📝 시험입력"):
+            st.session_state.page = "exam_input"
+            st.experimental_rerun()
         if cols[1].button("📅 시간표출력"): pass
-            
+
 # 원생입력 화면
 elif st.session_state.page == "student_input":
-    # 권한 확인
-    if st.session_state.role not in ["원장", "실장"]:
-        st.warning("⚠️ 원생정보 입력은 원장님과 실장님만 가능합니다.")
-        if st.button("⬅️ 메인으로"):
+    if st.session_state.role not in ["원장", "실장", "조교"]:
+        st.warning("⚠️ 원생정보 입력은 원장님, 실장님, 조교만 가능합니다.")
+        if st.button("⬅️ 이전단계로"):
             st.session_state.page = "main"
     else:
         st.title("👤 원생정보 입력")
@@ -132,6 +142,22 @@ elif st.session_state.page == "student_input":
             if uploaded:
                 df = pd.read_excel(uploaded)
                 st.dataframe(df)
+            if st.button("📥 엑셀 양식 다운로드"):
+                import io
+                from pandas import DataFrame
+                buffer = io.BytesIO()
+                df_sample = DataFrame({
+                    "이름": ["예시학생1"],
+                    "구분": ["중등"],
+                    "학교": ["전농중"],
+                    "학년": ["중2"],
+                    "반명": ["중2A"],
+                    "담임": ["김서진"],
+                    "수업시간": ["월수금(5시~7시30분)"],
+                    "학습과정": ["중2-1, 중2-2"]
+                })
+                df_sample.to_excel(buffer, index=False)
+                st.download_button("양식 다운로드", buffer.getvalue(), "원생정보_입력양식.xlsx")
 
         st.markdown("---")
         st.subheader("📋 현재 저장된 원생 목록")
@@ -140,8 +166,66 @@ elif st.session_state.page == "student_input":
             st.dataframe(df, use_container_width=True)
 
         colA, colB = st.columns(2)
-        if colA.button("⬅️ 메인으로"):
+        if colA.button("⬅️ 이전단계로"):
             st.session_state.page = "main"
         if colB.button("🗑 전체삭제"):
             st.session_state.students.clear()
             st.warning("모든 원생 정보가 삭제되었습니다.")
+
+# 시험정보입력 화면
+elif st.session_state.page == "exam_input":
+    from datetime import date
+
+    st.title("📝 시험정보 입력")
+    students = st.session_state.students
+    role = st.session_state.role
+    user = st.session_state.user
+
+    # 과목 추가
+    new_subject = st.text_input("추가할 과목명을 입력하세요", key="add_subject")
+    if st.button("과목 추가"):
+        if new_subject and new_subject not in st.session_state.exam_subjects:
+            st.session_state.exam_subjects.append(new_subject)
+
+    # 반 목록 필터링
+    if role in ["강사"]:
+        class_list = sorted(list({s["반명"] for s in students if s["담임"] == user}))
+    else:
+        class_list = sorted(list({s["반명"] for s in students}))
+
+    # 반-학교 구성
+    table = {}
+    for s in students:
+        b, h = s["반명"], s["학교"]
+        if b in class_list:
+            table.setdefault(h, {}).setdefault(b, []).append(s["이름"])
+
+    # 시험일 데이터 초기화
+    if "exam_table" not in st.session_state:
+        st.session_state.exam_table = {}
+
+    st.write("💡 셀을 눌러 시험일을 지정하세요 (요일 포함)")
+    for school in sorted(table.keys()):
+        st.markdown(f"### 🏫 {school}")
+        cols = st.columns(len(class_list) + len(st.session_state.exam_subjects))
+        col_idx = 0
+
+        for cls in class_list:
+            students_in_class = table[school].get(cls, [])
+            info = ", ".join(students_in_class)
+            cols[col_idx].markdown(f"**{cls}**")
+            cols[col_idx].write(f"{info} ({len(students_in_class)}명)" if students_in_class else "—")
+            col_idx += 1
+
+        for subject in st.session_state.exam_subjects:
+            key = f"{school}_{subject}"
+            exam_date = st.date_input(f"{school} {subject}", value=date.today(), key=key)
+            weekday = "월화수목금토일"[exam_date.weekday()]
+            st.session_state.exam_table[key] = f"{exam_date.strftime('%m-%d')}({weekday})"
+
+    if st.button("✅ 저장"):
+        st.success("시험 정보가 저장되었습니다.")
+        st.json(st.session_state.exam_table)
+
+    if st.button("⬅️ 이전단계로"):
+        st.session_state.page = "main"

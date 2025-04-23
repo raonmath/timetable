@@ -3,12 +3,13 @@ import pandas as pd
 import json
 import os
 from datetime import date
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
-# 저장 파일 경로
+# 파일 경로
 DATA_PATH = "students.json"
 EXAM_PATH = "exam_dates.json"
 
-# 비밀번호 딕셔너리
+# 비밀번호 목록
 PASSWORDS = {
     "rt5222": {"name": "이윤로", "role": "원장"},
     "rt1866": {"name": "이라온", "role": "실장"},
@@ -21,7 +22,7 @@ PASSWORDS = {
     "rt3080": {"name": "이예원", "role": "조교"},
 }
 
-# 저장 함수들
+# 파일 로드/저장 함수
 def load_students():
     if os.path.exists(DATA_PATH):
         with open(DATA_PATH, "r", encoding="utf-8") as f:
@@ -42,7 +43,7 @@ def save_exam_dates(data):
     with open(EXAM_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# 초기 세션 설정
+# 세션 초기화
 if "page" not in st.session_state:
     st.session_state.page = "login"
     st.session_state.user = ""
@@ -51,10 +52,8 @@ if "page" not in st.session_state:
     st.session_state.exam_subjects = ["수학시험일"]
     st.session_state.exam_dates = load_exam_dates()
     st.session_state.exam_title = "1학기 중간고사 시험기간"
-    st.session_state.confirm_delete = False
-    st.session_state.delete_index = None
 
-# 로그인 처리
+# 로그인 함수
 def login():
     pw = st.session_state.get("password_input", "")
     user = PASSWORDS.get(pw)
@@ -73,7 +72,7 @@ if st.session_state.page == "login":
     if st.button("확인"):
         login()
 
-# 메인 메뉴 화면
+# 메인 메뉴
 elif st.session_state.page == "main":
     st.markdown(f"## 👋 {st.session_state.user}님 환영합니다.")
     role = st.session_state.role
@@ -110,7 +109,7 @@ elif st.session_state.page == "main":
             st.session_state.page = "student_manage"
             st.rerun()
 
-# 원생 입력 화면
+# 원생 입력
 elif st.session_state.page == "student_input":
     st.title("👤 원생정보 입력")
 
@@ -153,7 +152,6 @@ elif st.session_state.page == "student_input":
                 "반명": classname, "담임": homeroom, "수업시간": time,
                 "학습과정": ", ".join(subjects)
             }
-            # 중복 방지
             st.session_state.students = [
                 s for s in st.session_state.students
                 if not (s["이름"] == name and s["반명"] == classname)
@@ -200,21 +198,21 @@ elif st.session_state.page == "exam_input":
     if role == "강사":
         students = [s for s in students if s["담임"] == user]
 
-    # 시험기간 제목 선택
+    # 시험기간 종류 선택
     exam_titles = [
         "1학기 중간고사 시험기간", "1학기 기말고사 시험기간",
         "2학기 중간고사 시험기간", "2학기 기말고사 시험기간"
     ]
-    st.session_state.exam_title = st.selectbox("시험기간 제목 선택", exam_titles, index=0)
+    st.session_state.exam_title = st.selectbox("시험기간 제목 선택", exam_titles)
 
-    # 과목 추가 입력
-    new_subject = st.text_input("과목 입력 (예: 국어)", key="add_subject_input")
+    # 과목 추가
+    new_subject = st.text_input("추가할 과목 입력 (예: 국어)", key="add_subject")
     if st.button("과목시험일 추가"):
-        subj_key = f"{new_subject.strip()}시험일"
-        if subj_key not in st.session_state.exam_subjects:
-            st.session_state.exam_subjects.append(subj_key)
+        key = f"{new_subject.strip()}시험일"
+        if key not in st.session_state.exam_subjects:
+            st.session_state.exam_subjects.append(key)
 
-    # 학교/반 기준 테이블 생성
+    # 반별 정보 정리
     school_class_map = {}
     for s in students:
         school = s["학교"]
@@ -222,49 +220,70 @@ elif st.session_state.page == "exam_input":
         name = s["이름"]
         school_class_map.setdefault(school, {}).setdefault(cls, []).append(name)
 
-    if not school_class_map:
-        st.warning("학생 정보가 없습니다.")
-    else:
-        for school, classes in school_class_map.items():
-            st.markdown(f"### 🏫 {school}")
-            cols = st.columns(len(classes) + 1)
-            cols[0].markdown("**반명**")
-            for i, cls in enumerate(classes.keys()):
-                cols[i+1].markdown(f"**{cls}**")
+    # 표 데이터 생성
+    grid_rows = []
+    for school, class_data in school_class_map.items():
+        row = {"학교명": school}
+        for cls, names in class_data.items():
+            label = f"{', '.join(names)} ({len(names)}명)"
+            row[cls] = label
 
-            # 첫 줄: 학생명 표시
-            cols = st.columns(len(classes) + 1)
-            cols[0].write("학생명")
-            for i, (cls, names) in enumerate(classes.items()):
-                cols[i+1].write(", ".join(names) + f" ({len(names)}명)")
+        # 시험기간 입력값 추가
+        for cls in class_data:
+            key = f"{school}_{cls}_{st.session_state.exam_title}"
+            val = st.session_state.exam_dates.get(key, "")
+            row[f"{cls}_{st.session_state.exam_title}"] = val
 
-            # 시험기간 입력
-            cols = st.columns(len(classes) + 1)
-            cols[0].write(f"📆 {st.session_state.exam_title}")
-            for i, cls in enumerate(classes.keys()):
-                start = st.date_input(f"{school}_{cls}_start", value=date.today())
-                end = st.date_input(f"{school}_{cls}_end", value=date.today())
-                w1 = "월화수목금토일"[start.weekday()]
-                w2 = "월화수목금토일"[end.weekday()]
-                key = f"{school}_{cls}_{st.session_state.exam_title}"
-                st.session_state.exam_dates[key] = f"{start.strftime('%m-%d')}({w1}) ~ {end.strftime('%m-%d')}({w2})"
-                cols[i+1].write(st.session_state.exam_dates[key])
-
-            # 과목별 시험일 입력
             for subj in st.session_state.exam_subjects:
-                cols = st.columns(len(classes) + 1)
-                cols[0].write(f"📝 {subj}")
-                for i, cls in enumerate(classes.keys()):
-                    dt = st.date_input(f"{school}_{cls}_{subj}", value=date.today())
-                    w = "월화수목금토일"[dt.weekday()]
-                    key = f"{school}_{cls}_{subj}"
-                    st.session_state.exam_dates[key] = f"{dt.strftime('%m-%d')}({w})"
-                    cols[i+1].write(st.session_state.exam_dates[key])
+                key2 = f"{school}_{cls}_{subj}"
+                val2 = st.session_state.exam_dates.get(key2, "")
+                row[f"{cls}_{subj}"] = val2
 
-        # 저장 버튼
-        if st.button("✅ 시험정보 저장"):
-            save_exam_dates(st.session_state.exam_dates)
-            st.success("시험 일정이 저장되었습니다.")
+        grid_rows.append(row)
+
+    # 표 컬럼 설정
+    columns = ["학교명"]
+    all_classes = {cls for data in school_class_map.values() for cls in data}
+    columns += sorted(all_classes)
+
+    for cls in sorted(all_classes):
+        columns.append(f"{cls}_{st.session_state.exam_title}")
+        for subj in st.session_state.exam_subjects:
+            columns.append(f"{cls}_{subj}")
+
+    df = pd.DataFrame(grid_rows, columns=columns)
+
+    # AgGrid 옵션 구성
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(editable=True, wrapText=True, autoHeight=True)
+    gb.configure_grid_options(domLayout='normal')
+    grid_options = gb.build()
+
+    # 표 출력
+    st.markdown("### 📋 시험정보표")
+    grid_response = AgGrid(
+        df,
+        gridOptions=grid_options,
+        update_mode=GridUpdateMode.VALUE_CHANGED,
+        allow_unsafe_jscode=True,
+        height=350,
+        fit_columns_on_grid_load=True
+    )
+
+    updated_df = grid_response["data"]
+
+    if st.button("✅ 시험정보 저장"):
+        new_data = {}
+        for _, row in updated_df.iterrows():
+            school = row["학교명"]
+            for col in row.index:
+                if col == "학교명": continue
+                if isinstance(row[col], str) and row[col].strip():
+                    key = f"{school}_{col}"
+                    new_data[key] = row[col]
+        st.session_state.exam_dates.update(new_data)
+        save_exam_dates(st.session_state.exam_dates)
+        st.success("시험 일정이 저장되었습니다.")
 
     if st.button("⬅️ 이전단계로"):
         st.session_state.page = "main"

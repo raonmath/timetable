@@ -8,7 +8,7 @@ from datetime import date
 DATA_PATH = "students.json"
 EXAM_PATH = "exam_dates.json"
 
-# 비밀번호 목록
+# 사용자 비밀번호 목록
 PASSWORDS = {
     "rt5222": {"name": "이윤로", "role": "원장"},
     "rt1866": {"name": "이라온", "role": "실장"},
@@ -42,7 +42,7 @@ def save_exam_dates(data):
     with open(EXAM_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# 초기 세션
+# 초기 세션 설정
 if "page" not in st.session_state:
     st.session_state.page = "login"
     st.session_state.user = ""
@@ -50,6 +50,8 @@ if "page" not in st.session_state:
     st.session_state.students = load_students()
     st.session_state.exam_subjects = ["시험기간", "수학시험일"]
     st.session_state.exam_dates = load_exam_dates()
+    st.session_state.confirm_delete = False
+    st.session_state.delete_index = None
 
 # 로그인 처리
 def login():
@@ -145,12 +147,17 @@ elif st.session_state.page == "student_input":
         subjects = st.multiselect("학습과정", subject_map[level])
 
         if st.button("💾 저장"):
-            student = {
+            new_student = {
                 "이름": name, "구분": level, "학교": school, "학년": grade,
                 "반명": classname, "담임": homeroom, "수업시간": time,
                 "학습과정": ", ".join(subjects)
             }
-            st.session_state.students.append(student)
+            # 중복 방지
+            st.session_state.students = [
+                s for s in st.session_state.students
+                if not (s["이름"] == name and s["반명"] == classname)
+            ]
+            st.session_state.students.append(new_student)
             save_students(st.session_state.students)
             st.success("저장되었습니다.")
 
@@ -160,7 +167,9 @@ elif st.session_state.page == "student_input":
         if file:
             df = pd.read_excel(file)
             for _, row in df.iterrows():
-                st.session_state.students.append(row.to_dict())
+                new = row.to_dict()
+                if not any(s["이름"] == new["이름"] and s["반명"] == new["반명"] for s in st.session_state.students):
+                    st.session_state.students.append(new)
             save_students(st.session_state.students)
             st.success("업로드 완료!")
 
@@ -175,17 +184,22 @@ elif st.session_state.page == "student_input":
             }]).to_excel(buffer, index=False, engine="openpyxl")
             st.download_button("양식 다운로드", buffer.getvalue(), "원생입력양식.xlsx")
 
-    # 추가: 원생정보확인 + 삭제
     if st.button("📋 원생정보확인"):
         df = pd.DataFrame(st.session_state.students)
         if df.empty:
             st.info("저장된 학생 정보가 없습니다.")
         else:
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df)
             if st.button("🗑 전체 삭제"):
-                st.session_state.students.clear()
-                save_students([])
-                st.warning("모든 원생정보가 삭제되었습니다.")
+                st.session_state.confirm_delete = True
+            if st.session_state.confirm_delete:
+                if st.button("❗ 삭제 확정"):
+                    st.session_state.students.clear()
+                    save_students([])
+                    st.session_state.confirm_delete = False
+                    st.warning("모든 원생정보가 삭제되었습니다.")
+                if st.button("취소"):
+                    st.session_state.confirm_delete = False
 
     if st.button("⬅️ 이전단계로"):
         st.session_state.page = "main"
@@ -199,46 +213,51 @@ elif st.session_state.page == "exam_input":
     role = st.session_state.role
     user = st.session_state.user
 
-    new_subject = st.text_input("추가할 시험 항목 (예: 국어시험일)", key="add_subject")
-    if st.button("과목추가") and new_subject:
-        if new_subject not in st.session_state.exam_subjects:
-            st.session_state.exam_subjects.append(new_subject)
-
     if role == "강사":
-        class_list = sorted({s["반명"] for s in students if s["담임"] == user})
-    else:
-        class_list = sorted({s["반명"] for s in students})
+        students = [s for s in students if s["담임"] == user]
+
+    # 반명 기준 정리
+    class_list = sorted({s["반명"] for s in students})
+    school_list = sorted({s["학교"] for s in students})
 
     school_class_map = {}
     for s in students:
         school = s["학교"]
         cls = s["반명"]
-        if cls in class_list:
-            school_class_map.setdefault(school, {}).setdefault(cls, []).append(s["이름"])
+        name = s["이름"]
+        school_class_map.setdefault(school, {}).setdefault(cls, []).append(name)
 
-    if not students:
-        st.warning("저장된 원생 정보가 없습니다.")
-    else:
-        for school, classes in sorted(school_class_map.items()):
-            st.markdown(f"### 🏫 {school}")
-            columns = st.columns(len(class_list))
+    # 과목 추가
+    new_subject = st.text_input("과목 입력 후 추가 버튼을 눌러주세요")
+    if st.button("과목시험일 추가") and new_subject:
+        key = f"{new_subject.strip()}시험일"
+        if key not in st.session_state.exam_subjects:
+            st.session_state.exam_subjects.append(key)
 
-            for i, cls in enumerate(class_list):
-                columns[i].markdown(f"**{cls}**")
-                names = classes.get(cls, [])
-                if names:
-                    columns[i].write(f"{', '.join(names)} ({len(names)}명)")
+    # 표 생성
+    st.write("📋 시험정보 입력표")
+    for school, classes in school_class_map.items():
+        st.markdown(f"### 🏫 {school}")
+        cols = st.columns(len(classes))
+        for i, (cls, names) in enumerate(classes.items()):
+            cols[i].write(f"**{cls}**")
+            cols[i].write(", ".join(names) + f" ({len(names)}명)")
+
+        for subj in st.session_state.exam_subjects:
+            st.markdown(f"📌 **{subj} 입력**")
+            cols = st.columns(len(classes))
+            for i, (cls, _) in enumerate(classes.items()):
+                key = f"{school}_{cls}_{subj}"
+                if "시험기간" in subj:
+                    start = st.date_input(f"{cls} 시작", key=f"{key}_start", value=date.today())
+                    end = st.date_input(f"{cls} 종료", key=f"{key}_end", value=date.today())
+                    w1 = "월화수목금토일"[start.weekday()]
+                    w2 = "월화수목금토일"[end.weekday()]
+                    st.session_state.exam_dates[key] = f"{start.strftime('%m-%d')}({w1})~{end.strftime('%m-%d')}({w2})"
                 else:
-                    columns[i].write("—")
-
-            for subj in st.session_state.exam_subjects:
-                st.markdown(f"📌 **{subj} 입력**")
-                columns = st.columns(len(class_list))
-                for i, cls in enumerate(class_list):
-                    key = f"{school}_{cls}_{subj}"
-                    dt = st.date_input(f"{cls}", value=date.today(), key=key)
-                    weekday = "월화수목금토일"[dt.weekday()]
-                    st.session_state.exam_dates[key] = f"{dt.strftime('%m-%d')}({weekday})"
+                    dt = st.date_input(f"{cls}", key=key, value=date.today())
+                    w = "월화수목금토일"[dt.weekday()]
+                    st.session_state.exam_dates[key] = f"{dt.strftime('%m-%d')}({w})"
 
     if st.button("✅ 시험정보 저장"):
         save_exam_dates(st.session_state.exam_dates)
@@ -254,7 +273,14 @@ elif st.session_state.page == "exam_input":
 elif st.session_state.page == "student_manage":
     st.title("📋 원생 정보 관리")
 
-    df = pd.DataFrame(st.session_state.students)
+    students = st.session_state.students
+    role = st.session_state.role
+    user = st.session_state.user
+
+    if role == "강사":
+        students = [s for s in students if s["담임"] == user]
+
+    df = pd.DataFrame(students)
     if df.empty:
         st.info("아직 저장된 원생 정보가 없습니다.")
     else:
@@ -288,6 +314,23 @@ elif st.session_state.page == "student_manage":
                 save_students(st.session_state.students)
                 st.success("수정 완료되었습니다.")
                 st.rerun()
+
+            if st.button("🗑 삭제"):
+                st.session_state.confirm_delete = True
+                st.session_state.delete_index = student
+
+            if st.session_state.get("confirm_delete") and st.session_state.delete_index == student:
+                if st.button("❗ 삭제 확정"):
+                    st.session_state.students = [
+                        s for s in st.session_state.students
+                        if not (s["이름"] == selected_name and s["반명"] == selected_class)
+                    ]
+                    save_students(st.session_state.students)
+                    st.session_state.confirm_delete = False
+                    st.success("삭제 완료되었습니다.")
+                    st.rerun()
+                if st.button("취소"):
+                    st.session_state.confirm_delete = False
 
     if st.button("⬅️ 이전단계로"):
         st.session_state.page = "main"

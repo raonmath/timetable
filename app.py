@@ -6,6 +6,7 @@ from datetime import date
 
 # 파일 경로
 DATA_PATH = "students.json"
+EXAM_PATH = "exam_dates.json"
 
 # 사용자 비밀번호 목록
 PASSWORDS = {
@@ -20,7 +21,7 @@ PASSWORDS = {
     "rt3080": {"name": "이예원", "role": "조교"},
 }
 
-# 저장/불러오기
+# 저장/불러오기 함수
 def load_students():
     if os.path.exists(DATA_PATH):
         with open(DATA_PATH, "r", encoding="utf-8") as f:
@@ -31,6 +32,16 @@ def save_students(data):
     with open(DATA_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+def load_exam_dates():
+    if os.path.exists(EXAM_PATH):
+        with open(EXAM_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_exam_dates(data):
+    with open(EXAM_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 # 초기 세션
 if "page" not in st.session_state:
     st.session_state.page = "login"
@@ -38,7 +49,7 @@ if "page" not in st.session_state:
     st.session_state.role = ""
     st.session_state.students = load_students()
     st.session_state.exam_subjects = ["시험기간", "수학시험일"]
-    st.session_state.exam_dates = {}
+    st.session_state.exam_dates = load_exam_dates()
 
 # 로그인 처리
 def login():
@@ -176,9 +187,6 @@ elif st.session_state.page == "exam_input":
     role = st.session_state.role
     user = st.session_state.user
 
-    if "exam_dates" not in st.session_state:
-        st.session_state.exam_dates = {}
-
     new_subject = st.text_input("추가할 시험 항목 (예: 국어시험일)", key="add_subject")
     if st.button("과목추가") and new_subject:
         if new_subject not in st.session_state.exam_subjects:
@@ -221,6 +229,7 @@ elif st.session_state.page == "exam_input":
                     st.session_state.exam_dates[key] = f"{dt.strftime('%m-%d')}({weekday})"
 
     if st.button("✅ 시험정보 저장"):
+        save_exam_dates(st.session_state.exam_dates)
         st.success("시험 일정이 저장되었습니다.")
         st.json(st.session_state.exam_dates)
 

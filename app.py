@@ -5,6 +5,7 @@ import os
 import io
 from datetime import date
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from openpyxl import Workbook
 
 # 파일 경로
 STUDENT_FILE = "students.json"
@@ -23,7 +24,7 @@ PASSWORDS = {
     "rt3080": {"name": "이예원", "role": "조교"},
 }
 
-# 저장/불러오기
+# 파일 불러오기
 def load_students():
     if os.path.exists(STUDENT_FILE):
         with open(STUDENT_FILE, "r", encoding="utf-8") as f:
@@ -51,7 +52,7 @@ if "page" not in st.session_state:
     st.session_state.role = ""
     st.session_state.students = load_students()
     st.session_state.schedule = load_schedule()
-    st.session_state.exam_subjects = ["수학시험일"]
+    st.session_state.confirm_delete = False
 
 # 로그인
 def login():
@@ -71,11 +72,11 @@ if st.session_state.page == "login":
     if st.button("확인"):
         login()
 
-# 메인메뉴
+# 메인 메뉴
 elif st.session_state.page == "main":
     st.markdown(f"## 👋 {st.session_state.user}님 환영합니다.")
-    role = st.session_state.role
 
+    role = st.session_state.role
     if role in ["원장", "실장"]:
         cols = st.columns(4)
         if cols[0].button("📊 현황보고"): pass
@@ -108,10 +109,9 @@ elif st.session_state.page == "main":
             st.session_state.page = "student_manage"
             st.rerun()
 
-# 원생 입력
+# 원생입력 화면
 elif st.session_state.page == "student_input":
     st.title("👤 원생정보 입력")
-    st.markdown("원장, 실장, 조교만 입력 가능")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -152,7 +152,6 @@ elif st.session_state.page == "student_input":
                 "반명": classname, "담임": homeroom, "수업시간": time,
                 "학습과정": ", ".join(subjects)
             }
-            # 중복 방지
             st.session_state.students = [
                 s for s in st.session_state.students
                 if not (s["이름"] == name and s["반명"] == classname)
@@ -174,7 +173,6 @@ elif st.session_state.page == "student_input":
             st.success("업로드 완료!")
 
         if st.button("📤 엑셀 양식 다운로드"):
-            import openpyxl
             buffer = io.BytesIO()
             pd.DataFrame([{
                 "이름": "예시학생", "구분": "중등", "학교": "전농중", "학년": "중2",
@@ -183,16 +181,22 @@ elif st.session_state.page == "student_input":
             }]).to_excel(buffer, index=False, engine="openpyxl")
             st.download_button("양식 다운로드", buffer.getvalue(), "원생입력양식.xlsx")
 
-    # 원생정보 확인
     if st.button("📋 원생정보확인"):
         df = pd.DataFrame(st.session_state.students)
         if not df.empty:
             st.dataframe(df)
-            if st.button("⚠️ 전체삭제"):
-                if st.confirm("정말 전체 삭제하시겠습니까?"):
+            if not st.session_state.confirm_delete:
+                if st.button("⚠️ 전체삭제"):
+                    st.session_state.confirm_delete = True
+            else:
+                st.warning("정말 삭제하시겠습니까?")
+                if st.button("Yes"):
                     st.session_state.students = []
                     save_students([])
+                    st.session_state.confirm_delete = False
                     st.success("전체 삭제 완료되었습니다.")
+                if st.button("No"):
+                    st.session_state.confirm_delete = False
         else:
             st.info("저장된 원생이 없습니다.")
 
@@ -200,10 +204,9 @@ elif st.session_state.page == "student_input":
         st.session_state.page = "main"
         st.rerun()
 
-# 시험입력 (팝업형 설계 + 저장상태 시각화)
+# 시험입력 메인 화면
 elif st.session_state.page == "exam_input":
-    st.title("📝 시험정보 입력")
-
+    st.title("📝 시험입력")
     students = st.session_state.students
     schedule = st.session_state.schedule
     user = st.session_state.user
@@ -213,121 +216,132 @@ elif st.session_state.page == "exam_input":
     if role == "강사":
         students = [s for s in students if s["담임"] == user]
 
-    # 학교별 데이터 구성
-    school_map = {}
-    for s in students:
-        school = s["학교"]
-        school_map.setdefault(school, []).append(s)
+    df = pd.DataFrame(students)
+    if df.empty:
+        st.warning("입력된 학생 정보가 없습니다.")
+    else:
+        school_list = df["학교"].unique()
+        display_data = []
 
-    for school, data in school_map.items():
-        cols = st.columns(2)
-        saved = school in schedule
-        btn_label = "✅ 저장됨" if saved else "시험정보입력"
-        btn_color = "green" if saved else "gray"
+        for school in school_list:
+            sub_df = df[df["학교"] == school]
+            row = {"학교명": school}
+            for cls in sub_df["반명"].unique():
+                names = sub_df[sub_df["반명"] == cls]["이름"].tolist()
+                row[cls] = ", ".join(names) + f" ({len(names)}명)"
+            row["시험기간"] = schedule.get(school, {}).get("시험기간", "")
+            row["입력"] = "✅ 저장됨" if school in schedule else "시험입력"
+            display_data.append(row)
 
-        with cols[0]:
-            st.markdown(f"#### 🏫 {school}")
-        with cols[1]:
-            if st.button(btn_label, key=f"exam_{school}"):
-                st.session_state.popup_school = school
-                st.session_state.page = "exam_popup"
-                st.rerun()
+        table_df = pd.DataFrame(display_data)
+        gb = GridOptionsBuilder.from_dataframe(table_df)
+        gb.configure_column("입력", editable=False, cellRenderer='AgGridCustomRenderer')
+        grid = AgGrid(table_df, gridOptions=gb.build(), update_mode=GridUpdateMode.SELECTION_CHANGED)
 
-# 팝업창: 시험정보입력 화면
+        if grid and grid['selected_rows']:
+            selected_school = grid['selected_rows'][0]['학교명']
+            st.session_state.popup_school = selected_school
+            st.session_state.page = "exam_popup"
+            st.rerun()
+
+    if st.button("⬅️ 이전단계로"):
+        st.session_state.page = "main"
+        st.rerun()
+
+# 시험입력 팝업 입력 화면
 elif st.session_state.page == "exam_popup":
     school = st.session_state.popup_school
     st.title(f"🏫 {school} - 시험정보입력")
 
-    # 시험기간 선택
-    col1, col2 = st.columns(2)
-    start_date = col1.date_input("시험 시작일", value=date.today())
-    end_date = col2.date_input("시험 종료일", value=date.today())
+    start_date = st.date_input("시험 시작일", value=date.today())
+    end_date = st.date_input("시험 종료일", value=date.today())
 
     start_week = "월화수목금토일"[start_date.weekday()]
     end_week = "월화수목금토일"[end_date.weekday()]
     period_str = f"{start_date.strftime('%m-%d')}({start_week}) ~ {end_date.strftime('%m-%d')}({end_week})"
 
-    # 시험일정표 구조
-    st.markdown("#### 🗓️ 날짜별 시험과목 입력")
+    st.subheader("🗓️ 날짜별 시험과목 입력")
     date_range = pd.date_range(start_date, end_date)
-    subject_options = {
-        "초등": ["초3-1", "초4-1", "초5-2", "초6-1"],
-        "중등": ["중1-1", "중2-2", "중3-1"],
+    level = next((s["구분"] for s in st.session_state.students if s["학교"] == school), "고등")
+    subject_map = {
+        "초등": ["초3-1", "초3-2", "초4-1", "초5-1", "초6-1"],
+        "중등": ["중1-1", "중2-1", "중3-1"],
         "고등": ["수학1", "수학2", "미적분", "확률과 통계", "기하"]
     }
+    subjects = subject_map.get(level, [])
 
-    # 구분 판단 (해당 학교 학생의 구분 사용)
-    level = None
-    for s in st.session_state.students:
-        if s["학교"] == school:
-            level = s["구분"]
-            break
-    subjects = subject_options.get(level, [])
-
-    schedule_data = {}
+    exam_schedule = {}
     for dt in date_range:
-        w = "월화수목금토일"[dt.weekday()]
-        col = st.selectbox(f"{dt.strftime('%m-%d')}({w})", [""] + subjects, key=f"{school}_{dt}")
-        if col:
-            schedule_data[dt.strftime('%m-%d') + f"({w})"] = col
+        week = "월화수목금토일"[dt.weekday()]
+        st.markdown(f"**{dt.strftime('%m-%d')}({week})**")
+        selected = st.multiselect(f"{dt}", subjects, key=f"{school}_{dt}")
+        if selected:
+            exam_schedule[dt.strftime('%m-%d') + f"({week})"] = selected
 
     if st.button("✅ 저장"):
         st.session_state.schedule[school] = {
             "시험기간": period_str,
-            "일정": schedule_data
+            "일정": exam_schedule
         }
         save_schedule(st.session_state.schedule)
-        st.success("저장 완료!")
+        st.success("저장되었습니다.")
         st.session_state.page = "exam_input"
         st.rerun()
 
-    if st.button("⬅️ 취소"):
+    if st.button("⬅️ 이전으로"):
         st.session_state.page = "exam_input"
         st.rerun()
 
-# 원생관리 화면
+# 원생관리
 elif st.session_state.page == "student_manage":
     st.title("📋 원생관리")
 
-    students = st.session_state.students
+    df = pd.DataFrame(st.session_state.students)
     role = st.session_state.role
     user = st.session_state.user
 
-    if role == "강사":
-        students = [s for s in students if s["담임"] == user]
-
-    df = pd.DataFrame(students)
-
     if df.empty:
-        st.warning("저장된 원생이 없습니다.")
+        st.warning("등록된 학생이 없습니다.")
     else:
-        levels = sorted(df["구분"].unique())
-        level = st.selectbox("구분 선택", levels)
-        temp = df[df["구분"] == level]
+        if role == "강사":
+            df = df[df["담임"] == user]
 
-        teachers = sorted(temp["담임"].unique())
-        teacher = st.selectbox("담임 선택", teachers)
-        temp = temp[temp["담임"] == teacher]
+        level = st.selectbox("구분 선택", sorted(df["구분"].unique()))
+        df = df[df["구분"] == level]
 
-        classes = sorted(temp["반명"].unique())
-        class_name = st.selectbox("반명 선택", classes)
-        temp = temp[temp["반명"] == class_name]
+        teacher = st.selectbox("담임 선택", sorted(df["담임"].unique()))
+        df = df[df["담임"] == teacher]
 
-        names = sorted(temp["이름"].unique())
-        name = st.selectbox("학생 선택", names)
+        classname = st.selectbox("반명 선택", sorted(df["반명"].unique()))
+        df = df[df["반명"] == classname]
 
-        st.markdown("#### 저장된 정보:")
-        student = temp[temp["이름"] == name].iloc[0]
-        st.json(student)
+        student = st.selectbox("학생 선택", sorted(df["이름"].unique()))
+        target = df[df["이름"] == student]
 
-        if st.button("❌ 삭제"):
-            st.session_state.students = [
-                s for s in st.session_state.students
-                if not (s["이름"] == name and s["반명"] == class_name)
-            ]
-            save_students(st.session_state.students)
-            st.success("삭제 완료됨")
-            st.rerun()
+        if not target.empty:
+            st.markdown("#### 저장된 정보:")
+            st.write(target.iloc[0].to_dict())
+
+            if st.button("❌ 삭제"):
+                if "confirm_indiv" not in st.session_state:
+                    st.session_state.confirm_indiv = True
+                elif st.session_state.confirm_indiv:
+                    st.session_state.students = [
+                        s for s in st.session_state.students
+                        if not (s["이름"] == student and s["반명"] == classname)
+                    ]
+                    save_students(st.session_state.students)
+                    st.success("삭제 완료되었습니다.")
+                    st.session_state.confirm_indiv = False
+                    st.rerun()
+
+            if st.session_state.get("confirm_indiv"):
+                st.warning("정말 삭제하시겠습니까?")
+                col_yes, col_no = st.columns(2)
+                if col_yes.button("Yes"):
+                    st.session_state.confirm_indiv = True
+                if col_no.button("No"):
+                    st.session_state.confirm_indiv = False
 
     if st.button("⬅️ 이전단계로"):
         st.session_state.page = "main"

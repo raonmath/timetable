@@ -3,19 +3,18 @@ import pandas as pd
 import json
 import os
 from datetime import date
-from openpyxl import Workbook
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-from io import BytesIO
 
 # 파일 경로
-STUDENTS_FILE = "data/students.json"
-EXAM_DATES_FILE = "data/exam_dates.json"
-USERS_FILE = "data/users.json"
+DATA_DIR = "data"
+STUDENTS_FILE = os.path.join(DATA_DIR, "students.json")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
 
-# 디렉토리 생성
-os.makedirs("data", exist_ok=True)
+# 디렉토리 확인 및 생성
+def ensure_directory(file_path):
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-# JSON 파일 함수
+# JSON 파일 로드/저장
 def load_json(file_path):
     if not os.path.exists(file_path):
         return {}
@@ -23,162 +22,185 @@ def load_json(file_path):
         return json.load(f)
 
 def save_json(data, file_path):
+    ensure_directory(file_path)
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 로그인 처리
+# 로그인 함수
 def login():
-    st.title("🛡️ 로그인")
+    users = load_json(USERS_FILE)
+    st.title("🔐 로그인")
     password = st.text_input("비밀번호 입력", type="password")
     if st.button("로그인"):
-        users = load_json(USERS_FILE)
         for username, info in users.items():
-            if info["password"] == password:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.session_state.role = info["role"]
+            if password == info.get("password"):
+                st.session_state["username"] = username
+                st.session_state["role"] = info.get("role")
                 st.success(f"{username}님 환영합니다!")
+                st.session_state["page"] = "main"
                 st.experimental_rerun()
-        else:
-            st.error("비밀번호가 올바르지 않습니다.")
-
-# 학생 데이터 테이블 생성
-def student_table():
-    students = load_json(STUDENTS_FILE)
-    rows = []
-    for school, grades in students.items():
-        for grade, classes in grades.items():
-            for class_, student_list in classes.items():
-                for student in student_list:
-                    rows.append({
-                        "이름": student["이름"],
-                        "구분": student["구분"],
-                        "학교": school,
-                        "학년": grade,
-                        "반명": class_,
-                        "담임": student["담임"],
-                        "수업시간": student["수업시간"],
-                        "수업과정": student["학습과정"]
-                    })
-    return pd.DataFrame(rows)
-
-# 엑셀 다운로드용 파일 생성
-def create_excel_template():
-    df = pd.DataFrame({
-        "이름": [],
-        "구분": [],
-        "학교": [],
-        "학년": [],
-        "반명": [],
-        "담임": [],
-        "수업시간": [],
-        "수업과정": []
-    })
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
-    return output.getvalue()
+        st.error("비밀번호가 일치하지 않습니다.")
 
 # 메인 페이지
 def main_page():
+    role = st.session_state.get("role")
     st.sidebar.title("📋 메뉴")
-    role = st.session_state.role
 
-    menu_options = []
+    menus = []
     if role in ["원장", "실장"]:
-        menu_options = ["현황보고", "직원관리", "학생관리", "학생정보", "시험입력", "학생시간표출력", "강사시간표출력"]
+        menus = ["학생관리", "시험입력"]
     elif role == "팀장":
-        menu_options = ["학생관리", "학생정보", "시험입력", "학생시간표출력", "강사시간표출력"]
-    elif role == "조교":
-        menu_options = ["학생관리", "시험입력", "학생시간표출력"]
+        menus = ["학생관리", "시험입력"]
     elif role == "강사":
-        menu_options = ["시험입력", "학생시간표출력"]
+        menus = ["시험입력"]
+    elif role == "조교":
+        menus = ["학생관리", "시험입력"]
 
-    choice = st.sidebar.radio("선택하세요", menu_options)
+    choice = st.sidebar.radio("메뉴를 선택하세요", menus)
 
     if choice == "학생관리":
         manage_students()
     elif choice == "시험입력":
-        manage_exams()
+        input_exam()
 
-# 학생 관리 페이지
+# 학생관리 함수
 def manage_students():
-    st.title("👩‍🎓 학생 관리")
-    
-    with st.expander("학생 등록"):
+    st.header("👩‍🎓 학생 관리")
+
+    students = load_json(STUDENTS_FILE)
+
+    with st.form("학생 등록"):        
         col1, col2 = st.columns(2)
         with col1:
             name = st.text_input("이름")
             level = st.selectbox("구분", ["초등", "중등", "고등"])
-            school = st.text_input("학교")
-            grade = st.text_input("학년")
         with col2:
-            class_name = st.text_input("반명")
-            teacher = st.text_input("담임")
-        time = st.text_input("수업시간")
-        subjects = st.multiselect("수업과정", ["초3-1", "초3-2", "초4-1", "초4-2", "초5-1", "초5-2", "초6-1", "초6-2",
-                                             "중1-1", "중1-2", "중2-1", "중2-2", "중3-1", "중3-2",
-                                             "수학1", "수학2", "공통수학1", "공통수학2", "미적분1", "미적분2", "확률과 통계", "기하"])
+            school = st.selectbox("학교", get_schools(level))
+            grade = st.selectbox("학년", get_grades(level))
 
-        if st.button("저장"):
-            if name and school and grade and class_name:
-                students = load_json(STUDENTS_FILE)
-                students.setdefault(school, {}).setdefault(grade, {}).setdefault(class_name, []).append({
-                    "이름": name,
-                    "구분": level,
-                    "학교": school,
-                    "학년": grade,
-                    "반명": class_name,
-                    "담임": teacher,
-                    "수업시간": time,
-                    "학습과정": ", ".join(subjects)
-                })
-                save_json(students, STUDENTS_FILE)
-                st.success("학생이 저장되었습니다.")
-                st.experimental_rerun()
-            else:
-                st.warning("필수 항목을 모두 입력하세요.")
+        col3, col4 = st.columns(2)
+        with col3:
+            class_name = st.text_input("반명")
+        with col4:
+            teacher = st.text_input("담임")
+
+        lesson_time = st.selectbox("수업시간", get_lesson_times(level))
+        subjects = st.multiselect("수업과정", get_subjects(level))
+
+        if st.form_submit_button("학생 저장"):
+            new_student = {
+                "이름": name,
+                "구분": level,
+                "학교": school,
+                "학년": grade,
+                "반명": class_name,
+                "담임": teacher,
+                "수업시간": lesson_time,
+                "학습과정": ", ".join(subjects)
+            }
+            if school not in students:
+                students[school] = {}
+            if grade not in students[school]:
+                students[school][grade] = {}
+            if class_name not in students[school][grade]:
+                students[school][grade][class_name] = []
+            students[school][grade][class_name].append(new_student)
+            save_json(students, STUDENTS_FILE)
+            st.success("학생 정보가 저장되었습니다!")
 
     st.divider()
     st.subheader("현재 등록된 학생")
-    df = student_table()
-    grid = AgGrid(df, update_mode=GridUpdateMode.SELECTION_CHANGED)
 
-    selected = grid['selected_rows']
-    if selected:
-        if st.button("선택 삭제"):
-            students = load_json(STUDENTS_FILE)
-            for sel in selected:
-                for grade in students.get(sel['학교'], {}):
-                    for class_ in students[sel['학교']][grade]:
-                        students[sel['학교']][grade][class_] = [s for s in students[sel['학교']][grade][class_] if s['이름'] != sel['이름']]
-            save_json(students, STUDENTS_FILE)
-            st.success("삭제되었습니다.")
-            st.experimental_rerun()
+    if students:
+        student_rows = []
+        for school, grades in students.items():
+            for grade, classes in grades.items():
+                for class_name, student_list in classes.items():
+                    for s in student_list:
+                        student_rows.append({
+                            "이름": s.get("이름"),
+                            "학교": school,
+                            "반명": class_name,
+                            "담임": s.get("담임"),
+                            "수업시간": s.get("수업시간")
+                        })
+        df = pd.DataFrame(student_rows)
 
-    if st.button("전체 삭제"):
-        if st.confirm("정말 전체 삭제하시겠습니까?"):
-            save_json({}, STUDENTS_FILE)
-            st.success("전체 삭제 완료")
-            st.experimental_rerun()
+        gb = GridOptionsBuilder.from_dataframe(df)
+        gb.configure_selection(selection_mode="multiple", use_checkbox=True)
+        grid = AgGrid(df, gridOptions=gb.build(), update_mode=GridUpdateMode.SELECTION_CHANGED, height=300)
 
-    st.download_button(
-        label="엑셀 양식 다운로드",
-        data=create_excel_template(),
-        file_name="학생등록양식.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        col_del1, col_del2 = st.columns(2)
+        with col_del1:
+            if st.button("선택 삭제"):
+                selected = grid["selected_rows"]
+                if selected:
+                    if st.confirm("선택한 학생을 삭제하시겠습니까?"):
+                        for row in selected:
+                            delete_student(row["이름"])
+                        st.success("선택한 학생이 삭제되었습니다.")
+                        st.experimental_rerun()
+        with col_del2:
+            if st.button("전체 삭제"):
+                if st.confirm("정말 전체 삭제하시겠습니까?"):
+                    save_json({}, STUDENTS_FILE)
+                    st.success("전체 학생 삭제 완료!")
+                    st.experimental_rerun()
+    else:
+        st.info("등록된 학생이 없습니다.")
 
-# 시험 관리 페이지
-def manage_exams():
-    st.title("📝 시험 입력")
-    st.write("준비 중... (추가 예정)")
+# 학생 삭제 함수
+def delete_student(name):
+    students = load_json(STUDENTS_FILE)
+    for school in list(students.keys()):
+        for grade in list(students[school].keys()):
+            for class_name in list(students[school][grade].keys()):
+                students[school][grade][class_name] = [s for s in students[school][grade][class_name] if s.get("이름") != name]
+    save_json(students, STUDENTS_FILE)
 
-# 메인 실행
+# 시험입력 함수 (간단화)
+def input_exam():
+    st.header("📝 시험 입력 (준비중)")
+    st.info("시험 입력 페이지는 곧 완성됩니다!")
+
+# 학교/학년/수업시간/수업과정 가져오기 함수
+def get_schools(level):
+    data = {
+        "초등": ["배봉초", "전농초", "전동초", "휘봉초", "삼육초", "청량초"],
+        "중등": ["휘경여중", "전동중", "전일중", "전농중", "동대문중", "장평중", "경희중", "경희여중"],
+        "고등": ["휘경여고", "해성여고", "동대부고", "휘봉고", "경희고", "경희여고", "대광고", "한대부고", "혜원여고", "중화고", "석관고"]
+    }
+    return data.get(level, [])
+
+def get_grades(level):
+    data = {
+        "초등": ["초3", "초4", "초5", "초6"],
+        "중등": ["중1", "중2", "중3"],
+        "고등": ["고1", "고2", "고3"]
+    }
+    return data.get(level, [])
+
+def get_lesson_times(level):
+    data = {
+        "초등": ["월수금(3시~5시)", "화목(3시~6시)"],
+        "중등": ["월수금(5시~7시30분)", "월수금(7시30분~10시)", "화목토(5시~7시30분)", "화목토(7시30분~10시)"],
+        "고등": ["월수(5시~8시30분)", "월수(6시30분~10시)", "화목(5시~8시30분)", "화목(6시30분~10시)"]
+    }
+    return data.get(level, [])
+
+def get_subjects(level):
+    data = {
+        "초등": ["초3-1", "초3-2", "초4-1", "초4-2", "초5-1", "초5-2", "초6-1", "초6-2"],
+        "중등": ["중1-1", "중1-2", "중2-1", "중2-2", "중3-1", "중3-2"],
+        "고등": ["공통수학1", "공통수학2", "대수", "미적분1", "미적분2", "확률과 통계", "기하", "수학1", "수학2", "미적분"]
+    }
+    return data.get(level, [])
+
+# 메인 함수
 def main():
-    if "logged_in" not in st.session_state:
+    if "username" not in st.session_state:
         login()
-    elif st.session_state.logged_in:
+    else:
         main_page()
 
 if __name__ == "__main__":

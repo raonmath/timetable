@@ -1,5 +1,38 @@
 {
-  "admin001": { "name": "홍길동", "role": "원장" },
-  "teacher002": { "name": "김영희", "role": "강사" },
-  "staff003": { "name": "박철수", "role": "조교" }
+  "이윤로": {
+    "role": "원장",
+    "password": "rt5222"
+  },
+  "이라온": {
+    "role": "실장",
+    "password": "rt1866"
+  },
+  "정주빈": {
+    "role": "강사",
+    "password": "rt3137"
+  },
+  "김서진": {
+    "role": "강사",
+    "password": "rt0368"
+  },
+  "류승연": {
+    "role": "강사",
+    "password": "rt0621"
+  },
+  "조하현": {
+    "role": "강사",
+    "password": "rt7735"
+  },
+  "임인섭": {
+    "role": "강사",
+    "password": "rt7705"
+  },
+  "유진서": {
+    "role": "조교",
+    "password": "rt0365"
+  },
+  "이예원": {
+    "role": "조교",
+    "password": "rt3080"
+  }
 }

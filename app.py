@@ -2,131 +2,143 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-from datetime import datetime
+from datetime import date
+from openpyxl import Workbook
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
-# 파일 경로
+# 파일 경로 설정
 STUDENTS_FILE = "data/students.json"
-EXAM_FILE = "data/exam_dates.json"
+EXAM_DATES_FILE = "data/exam_dates.json"
 USERS_FILE = "data/users.json"
 
 # 파일 디렉토리 확인 및 생성
 def ensure_directory(file_path):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-# JSON 파일 로드
+# JSON 파일 로드 및 저장
 def load_json(file_path):
     if not os.path.exists(file_path):
         return {}
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# JSON 파일 저장
 def save_json(data, file_path):
     ensure_directory(file_path)
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 로그인 함수
-def login(password):
-    users = load_json("data/users.json")
-
-    if username in users and users[username]["password"] == password:
-        # 로그인 성공
-        st.session_state["username"] = username
-        st.session_state["role"] = users[username]["role"]
-        go("main")  # 메인 페이지로 이동
-    else:
-        st.error("아이디 또는 비밀번호가 틀렸습니다.")
-
-# 사용자 관리 (관리자 전용)
-def manage_users():
-    st.header("👤 사용자 관리 (관리자 전용)")
-    users = load_json(USERS_FILE)
-
-    if st.button("사용자 추가"):
-        with st.form("add_user"):
-            name = st.text_input("이름")
-            password = st.text_input("비밀번호")
-            role = st.selectbox("역할", ["원장", "실장", "팀장", "조교", "강사"])
-            submitted = st.form_submit_button("저장")
-            if submitted and name and password and role:
-                users[password] = {"name": name, "role": role}
-                save_json(users, USERS_FILE)
-                st.success("사용자 추가 완료!")
-
-    st.subheader("📋 기존 사용자")
-    for pwd, info in users.items():
-        with st.expander(f"{info['name']} ({info['role']})"):
-            new_name = st.text_input(f"이름 수정 - {pwd}", value=info['name'], key=f"name_{pwd}")
-            new_role = st.selectbox(f"역할 수정 - {pwd}", ["원장", "실장", "팀장", "조교", "강사"], index=["원장", "실장", "팀장", "조교", "강사"].index(info['role']), key=f"role_{pwd}")
-            if st.button(f"수정하기 - {pwd}"):
-                users[pwd] = {"name": new_name, "role": new_role}
-                save_json(users, USERS_FILE)
-                st.success("수정 완료!")
-            if st.button(f"삭제하기 - {pwd}"):
-                users.pop(pwd)
-                save_json(users, USERS_FILE)
-                st.success("삭제 완료!")
-                st.experimental_rerun()
+# 페이지 이동
+def go(page_name):
+    st.session_state["page"] = page_name
 
 # 메인 함수
 def main():
-    st.set_page_config(page_title="학원 관리 시스템", page_icon="📚", layout="wide")
+    st.set_page_config(page_title="학원 관리 시스템", layout="wide")
+    page = st.session_state.get("page", "login")
 
-    if 'user' not in st.session_state:
-        st.title("📚 학원 관리 시스템 로그인")
-        password = st.text_input("비밀번호", type="password")
+    if page == "login":
+        st.title("로그인")
+        password = st.text_input("비밀번호를 입력하세요", type="password")
         if st.button("로그인"):
-            if login(password):
-                st.success("로그인 성공!")
-                st.experimental_rerun()
-            else:
+            users = load_json(USERS_FILE)
+            found = False
+            for username, info in users.items():
+                if info["password"] == password:
+                    st.session_state["username"] = username
+                    st.session_state["role"] = info["role"]
+                    found = True
+                    go("main")
+                    break
+            if not found:
                 st.error("비밀번호가 틀렸습니다.")
-        return
 
-    user = st.session_state['user']
-    role = user['role']
+    elif page == "main":
+        st.title(f"{st.session_state['username']}님 환영합니다 ✨")
+        role = st.session_state.get("role")
 
-    st.sidebar.title(f"환영합니다, {user['name']}님 ({role})")
-    menu_options = []
-    if role in ["원장", "실장"]:
-        menu_options = ["현황보고", "직원관리", "학생관리", "학생정보", "시험입력", "학생시간표출력", "강사시간표출력"]
-    elif role == "팀장":
-        menu_options = ["학생관리", "학생정보", "시험입력", "학생시간표출력", "강사시간표출력"]
-    elif role == "조교":
-        menu_options = ["학생관리", "시험입력", "학생시간표출력"]
-    elif role == "강사":
-        menu_options = ["시험입력", "학생시간표출력"]
+        menu = []
+        if role in ["원장", "실장"]:
+            menu = ["현황보고", "사용자관리", "학생관리", "학생정보", "시험입력", "학생시간표출력", "강사시간표출력"]
+        elif role == "팀장":
+            menu = ["학생관리", "학생정보", "시험입력", "학생시간표출력", "강사시간표출력"]
+        elif role == "조교":
+            menu = ["학생관리", "시험입력", "학생시간표출력"]
+        elif role == "강사":
+            menu = ["시험입력", "학생시간표출력"]
 
-    choice = st.sidebar.radio("메뉴", menu_options)
+        choice = st.sidebar.selectbox("메뉴", menu)
 
-    if choice == "직원관리" and role in ["원장", "실장"]:
-        manage_users()
+        if choice == "학생관리":
+            student_management()
 
-    elif choice == "학생관리":
-        st.header("📖 학생 관리")
-        st.info("(구체적인 기능은 다음 단계에서 추가)")
+# 학생 관리 페이지
+def student_management():
+    st.subheader("📚 학생 관리")
+    data = load_json(STUDENTS_FILE)
 
-    elif choice == "학생정보":
-        st.header("🧾 학생 정보")
-        st.info("(구체적인 기능은 다음 단계에서 추가)")
+    level = st.selectbox("학교급 선택", ["초등", "중등", "고등"])
 
-    elif choice == "시험입력":
-        st.header("📝 시험 입력")
-        st.info("(구체적인 기능은 다음 단계에서 추가)")
+    school_options = {
+        "초등": ["배봉초", "전농초", "전동초", "휘봉초", "삼육초", "청량초"],
+        "중등": ["휘경여중", "전동중", "전일중", "전농중", "동대문중", "장평중", "경희중", "경희여중"],
+        "고등": ["휘경여고", "해성여고", "동대부고", "휘봉고", "경희고", "경희여고", "대광고", "한대부고", "혜원여고", "중화고", "석관고"]
+    }
 
-    elif choice == "학생시간표출력":
-        st.header("📅 학생 시간표 출력")
-        st.info("(구체적인 기능은 다음 단계에서 추가)")
+    grade_options = {
+        "초등": ["초3", "초4", "초5", "초6"],
+        "중등": ["중1", "중2", "중3"],
+        "고등": ["고1", "고2", "고3"]
+    }
 
-    elif choice == "강사시간표출력":
-        st.header("👨‍🏫 강사 시간표 출력")
-        st.info("(구체적인 기능은 다음 단계에서 추가)")
+    time_options = {
+        "초등": ["월수금(3시~5시)", "화목(3시~6시)"],
+        "중등": ["월수금(5시~7시30분)", "월수금(7시30분~10시)", "화목토(5시~7시30분)", "화목토(7시30분~10시)"],
+        "고등": ["월수(5시~8시30분)", "월수(6시30분~10시)", "화목(5시~8시30분)", "화목(6시30분~10시)"]
+    }
 
-    elif choice == "현황보고":
-        st.header("📊 전체 현황 보고")
-        st.info("(구체적인 기능은 다음 단계에서 추가)")
+    subject_options = {
+        "초등": ["초3-1", "초3-2", "초4-1", "초4-2", "초5-1", "초5-2", "초6-1", "초6-2"],
+        "중등": ["중1-1", "중1-2", "중2-1", "중2-2", "중3-1", "중3-2"],
+        "고등": ["공통수학1", "공통수학2", "대수", "미적분1", "미적분2", "확률과 통계", "기하", "수학1", "수학2", "미적분"]
+    }
+
+    with st.form("학생 추가"):
+        name = st.text_input("이름")
+        school = st.selectbox("학교 선택", school_options[level])
+        grade = st.selectbox("학년 선택", grade_options[level])
+        class_name = st.text_input("반명")
+        homeroom_teacher = st.text_input("담임")
+        class_time = st.selectbox("수업시간 선택", time_options[level])
+        study_courses = st.multiselect("수업 과목 선택", subject_options[level])
+        submitted = st.form_submit_button("학생 추가")
+
+        if submitted and name and class_name and homeroom_teacher and class_time and study_courses:
+            student = {
+                "이름": name,
+                "구분": level,
+                "학교": school,
+                "학년": grade,
+                "반명": class_name,
+                "담임": homeroom_teacher,
+                "수업시간": class_time,
+                "학습과정": ", ".join(study_courses)
+            }
+
+            # 저장 로직
+            if school not in data:
+                data[school] = {}
+            if grade not in data[school]:
+                data[school][grade] = {}
+            if class_name not in data[school][grade]:
+                data[school][grade][class_name] = []
+
+            data[school][grade][class_name].append(student)
+            save_json(data, STUDENTS_FILE)
+            st.success("학생이 추가되었습니다!")
+
+    if data:
+        st.write("## 현재 등록된 학생")
+        st.json(data)
 
 if __name__ == "__main__":
     main()

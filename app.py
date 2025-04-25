@@ -12,11 +12,10 @@ def main():
     if st.session_state.page == "login":
         st.title("🔐 로그인")
         username = st.text_input("아이디")
-        role = st.selectbox("역할", ["원장", "실장", "조교", "강사", "학생"])
         if st.button("로그인"):
-            st.session_state["username"] = username
-            st.session_state["role"] = role
-            go("main")
+           st.session_state["username"] = username
+           st.session_state["role"] = "강사"  # 또는 "원장" 등 기본 역할 지정
+           go("main")
 
     elif st.session_state.page == "main":
         st.title("📚 학생 관리 시스템")

@@ -1,0 +1,5 @@
+{
+  "admin001": { "name": "홍길동", "role": "원장" },
+  "teacher002": { "name": "김영희", "role": "강사" },
+  "staff003": { "name": "박철수", "role": "조교" }
+}

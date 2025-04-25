@@ -29,12 +29,15 @@ def save_json(data, file_path):
 
 # 로그인 함수
 def login(password):
-    users = load_json(USERS_FILE)
-    user = users.get(password)
-    if user:
-        st.session_state['user'] = user
-        return True
-    return False
+    users = load_json("data/users.json")
+
+    if username in users and users[username]["password"] == password:
+        # 로그인 성공
+        st.session_state["username"] = username
+        st.session_state["role"] = users[username]["role"]
+        go("main")  # 메인 페이지로 이동
+    else:
+        st.error("아이디 또는 비밀번호가 틀렸습니다.")
 
 # 사용자 관리 (관리자 전용)
 def manage_users():

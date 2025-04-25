@@ -15,16 +15,31 @@ ROLE_MENUS = {
     "조교": ["학생관리", "시험입력", "시간표출력"]
 }
 
-# 기본 유저 목록
 def load_users():
     if not os.path.exists(USER_FILE):
         return {}
     with open(USER_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# 로그인 처리
+def load_students():
+    if not os.path.exists(STUDENT_FILE):
+        return []
+    with open(STUDENT_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            else:
+                return []
+        except:
+            return []
+
+def save_students(data):
+    with open(STUDENT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 def login():
-    st.title("🧑‍💼 라온 시간표 생성 시스템")
+    st.title("👨‍🏫 라온 시간표 생성 시스템")
     password = st.text_input("비밀번호를 입력하세요", type="password")
     if st.button("로그인"):
         users = load_users()
@@ -32,22 +47,9 @@ def login():
             if info["password"] == password:
                 st.session_state["logged_in"] = True
                 st.session_state["role"] = info["role"]
-                st.rerun()
+                st.experimental_rerun()
         st.warning("비밀번호가 틀렸습니다.")
 
-# 학생 데이터 불러오기
-def load_students():
-    if not os.path.exists(STUDENT_FILE):
-        return []
-    with open(STUDENT_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-# 저장
-def save_students(data):
-    with open(STUDENT_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-# 학생관리 페이지
 def student_management():
     st.header("👨‍🎓 학생관리")
 
@@ -63,7 +65,7 @@ def student_management():
         col3, col4 = st.columns(2)
         with col3:
             classname = st.text_input("반명")
-            homeroom = st.selectbox("담임", ["김담임", "이담임", "박담임"])  # 고정 목록 예시
+            homeroom = st.selectbox("담임", ["김담임", "이담임", "박담임"])
         with col4:
             time = st.text_input("수업시간")
             course = st.text_input("수업과정")
@@ -78,7 +80,7 @@ def student_management():
                 })
                 save_students(students)
                 st.success("학생 정보가 저장되었습니다.")
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.warning("이름은 필수 항목입니다.")
 
@@ -91,25 +93,22 @@ def student_management():
         students = [s for s in students if s["이름"] not in selected]
         save_students(students)
         st.success("선택한 학생을 삭제했습니다.")
-        st.rerun()
+        st.experimental_rerun()
     if st.button("전체삭제"):
         if st.confirm("정말 모든 학생을 삭제하시겠습니까?"):
             save_students([])
             st.success("모든 학생을 삭제했습니다.")
-            st.rerun()
+            st.experimental_rerun()
 
-    # 테이블 표시
     if students:
-        df = [{k: s[k] for k in ["이름", "학교", "반명", "담임", "수업시간"]} for s in students]
+        df = [{k: s.get(k, "") for k in ["이름", "학교", "반명", "담임", "수업시간"]} for s in students]
         st.dataframe(df, use_container_width=True)
 
-# 사이드바 메뉴
 def sidebar_menu():
     st.sidebar.title("📚 메뉴")
     menu = ROLE_MENUS.get(st.session_state["role"], [])
     return st.sidebar.radio("이동", menu)
 
-# 앱 실행
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
